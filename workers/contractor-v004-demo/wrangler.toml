@@ -1,0 +1,19 @@
+name = "contractor-v004-demo"
+main = "admin-login-wrapper.js"
+compatibility_date = "2024-01-01"
+
+[[d1_databases]]
+binding = "V003_2_DB"
+database_name = "contractor_v003_2_afo_db"
+database_id = "c0743318-ee23-4d08-9bd7-0d2b3cc36018"
+
+[[vectorize]]
+binding = "V003_2_VECTORIZE"
+index_name = "contractor-v003-2-afo-vector"
+
+[[r2_buckets]]
+binding = "V003_2_R2"
+bucket_name = "afo-site-content"
+
+[ai]
+binding = "AI"

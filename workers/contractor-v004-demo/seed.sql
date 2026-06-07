@@ -1,0 +1,2 @@
+-- Seed data placeholder for contractor-v004-demo
+-- Copy from contractor-v004-template/seed.sql and customize per client
