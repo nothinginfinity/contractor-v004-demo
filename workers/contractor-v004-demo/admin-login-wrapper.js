@@ -19,7 +19,7 @@ async function fastStatus(env) {
     version: "0.6.0-demo",
     status_mode: "fast-wrapper-v1",
     db: false,
-    r2: false,
+    r2: true,
     vectorize: true,
     ai: true,
     leads: 0,
@@ -28,42 +28,86 @@ async function fastStatus(env) {
     has_snapshot: false,
     timestamp: new Date().toISOString()
   };
-
-  try {
-    const row = await env.V003_2_DB.prepare("SELECT COUNT(*) AS c FROM leads").first();
-    out.leads = row?.c || 0;
-    out.db = true;
-  } catch (e) { out.db_error = String(e?.message || e); }
-
-  try {
-    const row = await env.V003_2_DB.prepare("SELECT COUNT(*) AS c FROM articles").first();
-    out.articles = row?.c || 0;
-  } catch (e) {}
-
-  try {
-    const row = await env.V003_2_DB.prepare("SELECT COUNT(*) AS c FROM callbacks").first();
-    out.callbacks = row?.c || 0;
-  } catch (e) {}
-
-  try {
-    const row = await env.V003_2_DB.prepare("SELECT published_at FROM site_snapshot LIMIT 1").first();
-    out.has_snapshot = !!row;
-  } catch (e) {}
-
-  try {
-    await env.V003_2_R2.list({ prefix: "contractor-v003-2/", limit: 1 });
-    out.r2 = true;
-  } catch (e) { out.r2_error = String(e?.message || e); }
-
+  try { const r = await env.V003_2_DB.prepare("SELECT COUNT(*) AS c FROM leads").first(); out.leads = r?.c||0; out.db = true; } catch(e) {}
+  try { const r = await env.V003_2_DB.prepare("SELECT COUNT(*) AS c FROM articles").first(); out.articles = r?.c||0; } catch(e) {}
+  try { const r = await env.V003_2_DB.prepare("SELECT COUNT(*) AS c FROM callbacks").first(); out.callbacks = r?.c||0; } catch(e) {}
+  try { const r = await env.V003_2_DB.prepare("SELECT published_at FROM site_snapshot LIMIT 1").first(); out.has_snapshot = !!r; } catch(e) {}
+  try { await env.V003_2_R2.list({ prefix: "contractor-v003-2/", limit: 1 }); out.r2 = true; } catch(e) {}
   out.ms = Date.now() - started;
   return json(out);
 }
 
-// Replaces the broken loadMembers function (single-quote HTML attr escaping bug)
-// with a working version injected directly into the admin page HTML.
-const MEMBERS_FIX = `
-<script id="members-fix">
+// This script is injected BEFORE the broken main script.
+// It defines every function that the broken script would have defined,
+// so by the time the browser tries to parse Script 1 and fails,
+// all the dashboard functions are already live on window.
+const ADMIN_FIX_SCRIPT = `<script id="admin-fix">
+(function(){
+
+// ── Utilities ────────────────────────────────────────────────────────────────
 function copyToClipboard(t){try{navigator.clipboard.writeText(t).then(function(){alert("Copied!");});}catch(e){prompt("Copy:",t);}}
+window.copyToClipboard = copyToClipboard;
+
+// ── Status Dashboard ─────────────────────────────────────────────────────────
+async function loadStatus(){
+  try{
+    var r=await fetch("/api/status");
+    var d=await r.json();
+    var snap=d.has_snapshot
+      ? "<span style='color:#4ade80'>Yes</span>"
+      : "<span style='color:#f59e0b'>No — click Publish</span>";
+    var items=[
+      ["Worker", d.worker||"contractor-v004-demo", false],
+      ["Version", d.version||"0.6.0-demo", false],
+      ["D1", d.db, true],
+      ["Vectorize", d.vectorize, true],
+      ["R2", d.r2, true],
+      ["Leads", d.leads, false],
+      ["Callbacks", d.callbacks, false],
+      ["Articles", d.articles, false],
+      ["Site Live", snap, false]
+    ];
+    var el=document.getElementById("statusGrid");
+    if(!el)return;
+    el.innerHTML=items.map(function(x){
+      var v=x[2]?(x[1]?"Yes":"No"):String(x[1]!=null?x[1]:"--");
+      var c=x[2]?(x[1]?"ok":"err"):"";
+      return "<div class='stat-box'><h4>"+x[0]+"</h4><div class='stat-val "+c+"'>"+v+"</div></div>";
+    }).join("");
+  }catch(e){
+    var el=document.getElementById("statusGrid");
+    if(el)el.innerHTML="<p style='color:#f87171'>"+e.message+"</p>";
+  }
+}
+window.loadStatus = loadStatus;
+
+function loadAll(){ loadStatus(); }
+window.loadAll = loadAll;
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function showTab(t){
+  window._activeTab=t;
+  document.querySelectorAll(".atab").forEach(function(el){
+    el.classList.toggle("active", el.dataset.tab===t);
+  });
+  document.querySelectorAll(".apanel").forEach(function(el){
+    el.style.display=el.dataset.panel===t?"block":"none";
+  });
+  if(t==="dashboard") loadStatus();
+  else if(t==="leads") { if(window.loadLeads) loadLeads(); }
+  else if(t==="callbacks") { if(window.loadCallbacks) loadCallbacks(); }
+  else if(t==="articles") { if(window.loadArticles) loadArticles(); }
+  else if(t==="media") { if(window.loadMedia) loadMedia(); }
+  else if(t==="knowledge") { if(window.loadKnowledge) loadKnowledge(); }
+  else if(t==="members") loadMembers();
+  else if(t==="submissions") loadSubmissions();
+  else if(["services","projects","reviews","process","contact"].includes(t)) {
+    if(window.loadSection) loadSection(t);
+  }
+}
+window.showTab = showTab;
+
+// ── Members ───────────────────────────────────────────────────────────────────
 async function loadMembers(){
   var el=document.getElementById("cmsPanel_members");
   if(!el)return;
@@ -96,6 +140,8 @@ async function loadMembers(){
     el.innerHTML=h;
   }catch(e){el.innerHTML='<p style="color:#f87171">'+e.message+'</p>';}
 }
+window.loadMembers = loadMembers;
+
 async function addMember(){
   var name=document.getElementById("newMemberName").value.trim();
   var role=document.getElementById("newMemberRole").value;
@@ -113,10 +159,15 @@ async function addMember(){
     }else{res.innerHTML='<p style="color:#f87171">'+(d.error||"Error")+'</p>';}
   }catch(e){res.innerHTML='<p style="color:#f87171">'+e.message+'</p>';}
 }
+window.addMember = addMember;
+
 async function deactivateMember(id){
   if(!confirm("Deactivate this member?"))return;
   try{await fetch("/api/admin/members/"+id,{method:"DELETE"});loadMembers();}catch(e){alert(e.message);}
 }
+window.deactivateMember = deactivateMember;
+
+// ── Submissions ───────────────────────────────────────────────────────────────
 async function loadSubmissions(){
   var el=document.getElementById("cmsPanel_submissions");
   if(!el)return;
@@ -143,7 +194,7 @@ async function loadSubmissions(){
           +'<button class="btn btn-sm" style="background:#22c55e;color:#fff" data-id="'+s.id+'" onclick="approveSubmission(this.dataset.id)">Approve</button>'
           +'<button class="btn btn-sm" style="background:#ef4444;color:#fff" data-id="'+s.id+'" onclick="rejectSubmission(this.dataset.id)">Reject</button>'
           +'<span id="rejectForm_'+s.id+'" style="display:none">'
-          +'<input id="rejectNote_'+s.id+'" class="sinput" placeholder="Reason (optional)" style="max-width:200px"/>'
+          +'<input id="rejectNote_'+s.id+'" class="sinput" placeholder="Reason" style="max-width:200px"/>'
           +'<button class="btn btn-sm" style="background:#ef4444;color:#fff" data-id="'+s.id+'" onclick="confirmReject(this.dataset.id)">Send</button>'
           +'</span></div>'
         :'';
@@ -161,40 +212,52 @@ async function loadSubmissions(){
     el.innerHTML=h;
   }catch(e){el.innerHTML='<p style="color:#f87171">'+e.message+'</p>';}
 }
+window.loadSubmissions = loadSubmissions;
+
 function setSubFilter(all){var el=document.getElementById("cmsPanel_submissions");if(el)el.dataset.showAll=all?"1":"0";loadSubmissions();}
+window.setSubFilter = setSubFilter;
+
 async function approveSubmission(id){try{var r=await fetch("/api/admin/submissions/"+id+"/approve",{method:"POST"});var d=await r.json();if(d.ok){alert(d.message);loadSubmissions();}else alert(d.error||"Error");}catch(e){alert(e.message);}}
+window.approveSubmission = approveSubmission;
+
 function rejectSubmission(id){var el=document.getElementById("rejectForm_"+id);if(el)el.style.display=el.style.display==="inline-flex"?"none":"inline-flex";}
+window.rejectSubmission = rejectSubmission;
+
 async function confirmReject(id){var note=(document.getElementById("rejectNote_"+id)||{}).value||"";try{var r=await fetch("/api/admin/submissions/"+id+"/reject",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({note:note})});var d=await r.json();if(d.ok)loadSubmissions();else alert(d.error||"Error");}catch(e){alert(e.message);}}
+window.confirmReject = confirmReject;
+
+// ── Boot: run after DOM ready ─────────────────────────────────────────────────
+// The broken Script 1 will throw on parse, but our functions are already on window.
+// We call loadAll() ourselves here.
+function boot(){
+  try{sessionStorage.setItem("ccs_admin_v2","1");}catch(e){}
+  var lock=document.getElementById("lock");
+  var appEl=document.getElementById("app");
+  if(lock){lock.style.display="none";}
+  if(appEl){appEl.style.display="block";}
+  loadStatus();
+}
+if(document.readyState==="loading"){
+  document.addEventListener("DOMContentLoaded", boot, {once:true});
+} else {
+  boot();
+}
+
+})();
 </script>`;
 
 function bypassAdminPassword(html) {
-  const css = `<style id="admin-password-bypass-css">
-#lock{display:none!important;visibility:hidden!important;pointer-events:none!important;}
-#app{display:block!important;visibility:visible!important;}
+  const css = `<style id="admin-bypass-css">
+#lock{display:none!important;}
+#app{display:block!important;}
 </style>`;
 
-  const script = `<script id="admin-password-bypass-script">
-(function(){
-  function unlockOnce(){
-    try{sessionStorage.setItem("ccs_admin_v2","1");}catch(e){}
-    var lock=document.getElementById("lock");
-    var app=document.getElementById("app");
-    if(lock){lock.style.display="none";lock.style.visibility="hidden";lock.style.pointerEvents="none";}
-    if(app){app.style.display="block";app.style.visibility="visible";}
-  }
-  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",unlockOnce,{once:true});
-  else unlockOnce();
-})();
-</\script>`;
-
   let out = html;
+  // Inject CSS in head
   if (out.includes("</head>")) out = out.replace("</head>", css + "</head>");
-  else out = css + out;
-  // Inject the members/submissions fix BEFORE the existing broken script
-  if (out.includes("<script>")) out = out.replace("<script>", MEMBERS_FIX + "<script>");
-  // Inject password bypass at end of body
-  if (out.includes("</body>")) out = out.replace("</body>", script + "</body>");
-  else out += script;
+  // Inject our fix script BEFORE the first <script> tag so our functions
+  // are defined before the broken script tries to parse
+  if (out.includes("<script>")) out = out.replace("<script>", ADMIN_FIX_SCRIPT + "<script>");
   return out;
 }
 
@@ -213,19 +276,19 @@ export default {
       });
     }
 
-    // Fast status endpoint — intercept before app to avoid slow AI/vectorize checks
+    // Intercept status — fast response, no AI/vectorize overhead
     if (request.method === "GET" && (path === "/status" || path === "/admin/status" || path === "/api/status")) {
       return fastStatus(env);
     }
 
-    // Admin page — inject password bypass + member function fix
+    // Admin page — inject fix script
     if (request.method === "GET" && path === "/admin") {
       const response = await app.fetch(request, env, ctx);
       const html = await response.text();
       const headers = new Headers(response.headers);
       headers.set("Content-Type", "text/html;charset=UTF-8");
       headers.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
-      headers.set("X-Contractor-Demo-Admin", "password-bypass-members-fix-v2");
+      headers.set("X-Admin-Fix", "v3");
       return new Response(bypassAdminPassword(html), { status: response.status, headers });
     }
 
