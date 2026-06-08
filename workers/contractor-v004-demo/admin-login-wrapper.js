@@ -43,9 +43,7 @@ async function fastStatus(env) {
 import { handleContentHub } from "./content-hub.js";
 
 async function routeContentHub(req, env, ctx, path) {
-  // Crew upload portal
   if (path === '/crew/upload') return handleContentHub(req, env);
-  // Admin API routes for content hub
   if (path.startsWith('/api/admin/content-submissions') || path.startsWith('/api/admin/social-posts')) {
     return handleContentHub(req, env);
   }
@@ -54,15 +52,17 @@ async function routeContentHub(req, env, ctx, path) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Admin fix + Content Hub admin JS
+// NOTE: All regex literals inside this template literal must use new RegExp()
+// because /pattern/ with slashes can be misread as comments or break parsing.
 // ─────────────────────────────────────────────────────────────────────────────
 const ADMIN_FIX_SCRIPT = `<script id="admin-fix">
 (function(){
 
-// ── Utilities ─────────────────────────────────────────────────────────────────
+// ── Utilities ────────────────────────────────────────────────────────────────
 function copyToClipboard(t){try{navigator.clipboard.writeText(t).then(function(){alert('Copied!');});}catch(e){prompt('Copy:',t);}}
 window.copyToClipboard = copyToClipboard;
 
-// ── Status ────────────────────────────────────────────────────────────────────
+// ── Status ───────────────────────────────────────────────────────────────────
 async function loadStatus(){
   try{
     var r=await fetch('/api/status');
@@ -110,9 +110,8 @@ async function loadMembers(){
     d.members.forEach(function(m){
       var st=m.active?'<span style="color:#4ade80">Active</span>':'<span style="color:#f87171">Inactive</span>';
       var db=m.active?'<button class="btn btn-sm" style="background:#ef4444;color:#fff" data-mid="'+m.id+'" onclick="deactivateMember(this.dataset.mid)">Deactivate</button>':'';
-      var uploadUrl=m.portal_url.replace('/crew/','/crew/upload?token=').replace(/\/crew\/.*$/,'');
-      // Try to extract token from portal_url
-      var tokenMatch=m.portal_url.match(/[?&]token=([^&]+)/);
+      // Use new RegExp() instead of regex literal to avoid // comment parsing issue
+      var tokenMatch=m.portal_url.match(new RegExp('[?&]token=([^&]+)'));
       var uploadLink=tokenMatch?location.origin+'/crew/upload?token='+tokenMatch[1]:'';
       h+='<tr><td style="font-weight:600">'+m.name+'</td><td>'+m.role+'</td><td>'+st+'</td>';
       h+='<td style="max-width:160px"><div style="display:flex;gap:.35rem;align-items:center"><span style="font-size:.72rem;color:var(--muted);max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+m.portal_url+'</span><button class="btn btn-sm" style="background:rgba(255,255,255,.1);color:#fff;font-size:.68rem" data-url="'+m.portal_url+'" onclick="copyToClipboard(this.dataset.url)">Copy</button></div></td>';
@@ -198,48 +197,19 @@ async function loadContentHub(){
   try{
     var r=await fetch('/api/admin/content-submissions?status='+_chFilter);
     var d=await r.json();
-
-    var filterBar='<div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1.25rem">'
-      +['pending','approved','posted','rejected','all'].map(function(f){
-          return '<button class="btn btn-sm" style="background:'+(_chFilter===f?'var(--a)':'rgba(255,255,255,.1)')+';color:#fff" onclick="setChFilter(\''+f+'\')">'+(f.charAt(0).toUpperCase()+f.slice(1))+'</button>';
-        }).join('')
-      +'<button class="btn btn-sm" style="background:rgba(200,168,75,.2);color:var(--a);margin-left:auto" onclick="loadContentHub()">&#8635; Refresh</button>'
-      +'</div>';
-
-    if(!d.submissions||!d.submissions.length){
-      el.innerHTML=filterBar+'<div style="text-align:center;padding:3rem;color:var(--muted)"><div style="font-size:3rem;margin-bottom:.75rem">&#128247;</div><p>No '+(_chFilter==='all'?'':_chFilter+' ')+'content submissions.</p><p style="font-size:.82rem;margin-top:.5rem">Share an upload link with crew via Members tab.</p></div>';
-      return;
-    }
-
+    var filterBar='<div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1.25rem">'+['pending','approved','posted','rejected','all'].map(function(f){return'<button class="btn btn-sm" style="background:'+(_chFilter===f?'var(--a)':'rgba(255,255,255,.1)')+';color:#fff" onclick="setChFilter(\''+f+'\')">'+f.charAt(0).toUpperCase()+f.slice(1)+'</button>';}).join('')+'<button class="btn btn-sm" style="background:rgba(200,168,75,.2);color:var(--a);margin-left:auto" onclick="loadContentHub()">&#8635; Refresh</button></div>';
+    if(!d.submissions||!d.submissions.length){el.innerHTML=filterBar+'<div style="text-align:center;padding:3rem;color:var(--muted)"><div style="font-size:3rem;margin-bottom:.75rem">&#128247;</div><p>No '+(_chFilter==='all'?'':_chFilter+' ')+'content submissions.</p><p style="font-size:.82rem;margin-top:.5rem">Share an upload link with crew via Members tab.</p></div>';return;}
     var html=filterBar+'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1rem">';
     d.submissions.forEach(function(s){
       var isImg=s.content_type&&s.content_type.indexOf('image')===0;
       var isVid=s.content_type&&s.content_type.indexOf('video')===0;
-      var thumb=isImg?'<img src="/media/serve/'+encodeURIComponent(s.r2_key)+'" style="width:100%;height:160px;object-fit:cover;display:block"/>':
-                isVid?'<video src="/media/serve/'+encodeURIComponent(s.r2_key)+'" style="width:100%;height:160px;object-fit:cover;display:block" muted playsinline></video>':
-                '<div style="height:100px;background:rgba(255,255,255,.05);display:flex;align-items:center;justify-content:center;font-size:2.5rem">&#128172;</div>';
+      var thumb=isImg?'<img src="/media/serve/'+encodeURIComponent(s.r2_key)+'" style="width:100%;height:160px;object-fit:cover;display:block"/>':isVid?'<video src="/media/serve/'+encodeURIComponent(s.r2_key)+'" style="width:100%;height:160px;object-fit:cover;display:block" muted playsinline></video>':'<div style="height:100px;background:rgba(255,255,255,.05);display:flex;align-items:center;justify-content:center;font-size:2.5rem">&#128172;</div>';
       var sc=s.status==='posted'?'#4ade80':s.status==='approved'?'#60a5fa':s.status==='rejected'?'#f87171':'#f59e0b';
       var note=s.raw_note||'(no note)';
-      html+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden">'
-        +(s.r2_key?'<div style="position:relative">'+thumb+'</div>':thumb)
-        +'<div style="padding:1rem">'
-        +'<div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem">'
-        +'<span style="background:'+sc+';color:#000;font-size:.65rem;font-weight:700;padding:.15rem .5rem;border-radius:8px;text-transform:uppercase">'+s.status+'</span>'
-        +'<span style="font-size:.72rem;color:var(--muted)">'+s.submitted_by+'</span>'
-        +'<span style="font-size:.7rem;color:var(--muted);margin-left:auto">'+(s.created_at||'').slice(0,10)+'</span>'
-        +'</div>'
-        +'<p style="font-size:.82rem;color:var(--muted);margin-bottom:.75rem;line-height:1.45">'+note.slice(0,140)+(note.length>140?'...':'')+'</p>';
-
-      if(s.status==='pending'){
-        html+='<div style="display:flex;gap:.5rem;flex-wrap:wrap">'
-          +'<button class="btn btn-gold btn-sm" onclick="openChCard('+s.id+')">&#10024; Review &amp; Post</button>'
-          +'<button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="quickRejectSub('+s.id+')">Reject</button>'
-          +'</div>';
-      } else if(s.status==='approved'){
-        html+='<button class="btn btn-gold btn-sm" onclick="openChCard('+s.id+')">&#128640; Dispatch</button>';
-      } else if(s.status==='posted'||s.status==='guided_dispatched'){
-        html+='<span style="color:#4ade80;font-size:.8rem">&#10003; Dispatched</span>';
-      }
+      html+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden">'+(s.r2_key?'<div style="position:relative">'+thumb+'</div>':thumb)+'<div style="padding:1rem"><div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem"><span style="background:'+sc+';color:#000;font-size:.65rem;font-weight:700;padding:.15rem .5rem;border-radius:8px;text-transform:uppercase">'+s.status+'</span><span style="font-size:.72rem;color:var(--muted)">'+s.submitted_by+'</span><span style="font-size:.7rem;color:var(--muted);margin-left:auto">'+(s.created_at||'').slice(0,10)+'</span></div><p style="font-size:.82rem;color:var(--muted);margin-bottom:.75rem;line-height:1.45">'+note.slice(0,140)+(note.length>140?'...':'')+'</p>';
+      if(s.status==='pending'){html+='<div style="display:flex;gap:.5rem;flex-wrap:wrap"><button class="btn btn-gold btn-sm" onclick="openChCard('+s.id+')">&#10024; Review &amp; Post</button><button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="quickRejectSub('+s.id+')">Reject</button></div>';}
+      else if(s.status==='approved'){html+='<button class="btn btn-gold btn-sm" onclick="openChCard('+s.id+')">&#128640; Dispatch</button>';}
+      else if(s.status==='posted'||s.status==='guided_dispatched'){html+='<span style="color:#4ade80;font-size:.8rem">&#10003; Dispatched</span>';}
       html+='</div></div>';
     });
     html+='</div>';
@@ -251,22 +221,16 @@ window.loadContentHub=loadContentHub;
 function setChFilter(f){_chFilter=f;loadContentHub();}
 window.setChFilter=setChFilter;
 
-async function quickRejectSub(id){
-  if(!confirm('Reject this submission?'))return;
-  try{await fetch('/api/admin/content-submissions/'+id+'/reject',{method:'POST'});loadContentHub();}catch(e){alert(e.message);}
-}
+async function quickRejectSub(id){if(!confirm('Reject this submission?'))return;try{await fetch('/api/admin/content-submissions/'+id+'/reject',{method:'POST'});loadContentHub();}catch(e){alert(e.message);}}
 window.quickRejectSub=quickRejectSub;
 
 async function openChCard(id){
-  // Fetch captions if not already generated
   var overlay=document.getElementById('chOverlay');
   overlay.style.display='flex';
   var content=document.getElementById('chModalContent');
   content.innerHTML='<div style="text-align:center;padding:2rem"><span class="spin"></span><p style="margin-top:1rem;color:var(--muted)">Generating AI captions...</p></div>';
   try{
-    // First generate captions
     await fetch('/api/admin/content-submissions/'+id+'/generate-captions',{method:'POST'});
-    // Then reload the submission to get captions
     var r=await fetch('/api/admin/content-submissions?status=all');
     var d=await r.json();
     var s=(d.submissions||[]).find(function(x){return x.id===id;});
@@ -288,90 +252,55 @@ function renderChModal(s,captions){
     if(isImg)mediaHtml='<img src="/media/serve/'+encodeURIComponent(s.r2_key)+'" style="width:100%;max-height:220px;object-fit:cover;border-radius:8px;margin-bottom:1rem;display:block"/>';
     else if(isVid)mediaHtml='<video src="/media/serve/'+encodeURIComponent(s.r2_key)+'" controls style="width:100%;max-height:220px;border-radius:8px;margin-bottom:1rem;display:block"></video>';
   }
-  var captionOpts=captions.map(function(c,i){
-    return '<div style="background:rgba(255,255,255,.05);border:1.5px solid var(--border);border-radius:var(--r);padding:.85rem;margin-bottom:.5rem;cursor:pointer" id="cap_'+i+'" onclick="selectCaption('+i+')" data-cap="'+c.replace(/"/g,"&quot;")+'">'+'<div style="font-size:.75rem;color:var(--a);font-weight:600;margin-bottom:.3rem">Option '+(i+1)+'</div>'+'<p style="font-size:.84rem;color:var(--text);line-height:1.5">'+c+'</p>'+'</div>';
-  }).join('');
-
+  var captionOpts=captions.map(function(c,i){return'<div style="background:rgba(255,255,255,.05);border:1.5px solid var(--border);border-radius:var(--r);padding:.85rem;margin-bottom:.5rem;cursor:pointer" id="cap_'+i+'" onclick="selectCaption('+i+')" data-cap="'+c.replace(/"/g,'&quot;')+'"><div style="font-size:.75rem;color:var(--a);font-weight:600;margin-bottom:.3rem">Option '+(i+1)+'</div><p style="font-size:.84rem;color:var(--text);line-height:1.5">'+c+'</p></div>';}).join('');
   var content=document.getElementById('chModalContent');
   content.innerHTML=mediaHtml
     +'<p style="font-size:.8rem;color:var(--muted);margin-bottom:1rem"><strong style="color:#fff">From:</strong> '+s.submitted_by+' &bull; '+s.raw_note+'</p>'
-    +'<div style="margin-bottom:1.25rem">'
-    +'<div style="font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.6rem">AI Caption Suggestions</div>'
-    +captionOpts
-    +'</div>'
-    +'<div style="margin-bottom:1.25rem">'
-    +'<div style="font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.6rem">Edit Caption</div>'
-    +'<textarea id="chCaption" style="width:100%;background:rgba(255,255,255,.06);border:1.5px solid var(--border);border-radius:var(--r);padding:.75rem;color:#fff;font-size:.88rem;font-family:inherit;min-height:80px;outline:none;resize:vertical">'+captions[0]+'</textarea>'
-    +'</div>'
-    +'<div style="margin-bottom:1.5rem">'
-    +'<div style="font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.8rem">Dispatch to Platform</div>'
+    +'<div style="margin-bottom:1.25rem"><div style="font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.6rem">AI Caption Suggestions</div>'+captionOpts+'</div>'
+    +'<div style="margin-bottom:1.25rem"><div style="font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.6rem">Edit Caption</div><textarea id="chCaption" style="width:100%;background:rgba(255,255,255,.06);border:1.5px solid var(--border);border-radius:var(--r);padding:.75rem;color:#fff;font-size:.88rem;font-family:inherit;min-height:80px;outline:none;resize:vertical">'+captions[0]+'</textarea></div>'
+    +'<div style="margin-bottom:1.5rem"><div style="font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.8rem">Dispatch to Platform</div>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem" id="platformBtns">'
     +'<button class="btn btn-sm" style="background:#0560ff;color:#fff;padding:.65rem" onclick="dispatchPost(\'bluesky\')" data-plat="bluesky">&#127964; Bluesky<br><span style="font-size:.7rem;opacity:.7">Direct API post</span></button>'
     +'<button class="btn btn-sm" style="background:#563acc;color:#fff;padding:.65rem" onclick="dispatchPost(\'mastodon\')" data-plat="mastodon">&#128025; Mastodon<br><span style="font-size:.7rem;opacity:.7">Direct API post</span></button>'
     +(s.r2_key?'<button class="btn btn-sm" style="background:linear-gradient(135deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888);color:#fff;padding:.65rem" onclick="guidedPost(\'instagram_guided\')" data-plat="instagram_guided">&#128247; Instagram<br><span style="font-size:.7rem;opacity:.85">Guided preflight</span></button>':'<button class="btn btn-sm" style="background:rgba(255,255,255,.08);color:var(--muted);padding:.65rem;cursor:not-allowed" disabled>&#128247; Instagram<br><span style="font-size:.7rem">Image required</span></button>')
     +(s.r2_key?'<button class="btn btn-sm" style="background:#000;color:#fff;padding:.65rem;border:1px solid #333" onclick="guidedPost(\'tiktok_guided\')" data-plat="tiktok_guided">&#127925; TikTok<br><span style="font-size:.7rem;opacity:.85">Guided preflight</span></button>':'<button class="btn btn-sm" style="background:rgba(255,255,255,.08);color:var(--muted);padding:.65rem;cursor:not-allowed" disabled>&#127925; TikTok<br><span style="font-size:.7rem">Media required</span></button>')
-    +'</div>'
-    +'</div>'
+    +'</div></div>'
     +'<div id="chPostResult"></div>'
-    +'<div style="display:flex;gap:.75rem;margin-top:.5rem">'
-    +'<button class="btn btn-sm" style="background:rgba(255,255,255,.08);color:var(--muted);flex:1" onclick="closeChOverlay()">Close</button>'
-    +'<button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="quickRejectSub('+s.id+');closeChOverlay()">Reject</button>'
-    +'</div>';
+    +'<div style="display:flex;gap:.75rem;margin-top:.5rem"><button class="btn btn-sm" style="background:rgba(255,255,255,.08);color:var(--muted);flex:1" onclick="closeChOverlay()">Close</button><button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="quickRejectSub('+s.id+');closeChOverlay()">Reject</button></div>';
 }
 window.renderChModal=renderChModal;
 
-function selectCaption(i){
-  document.querySelectorAll('[id^="cap_"]').forEach(function(el){el.style.borderColor='var(--border)';});
-  var el=document.getElementById('cap_'+i);
-  if(el){el.style.borderColor='var(--a)';document.getElementById('chCaption').value=el.dataset.cap;}
-}
+function selectCaption(i){document.querySelectorAll('[id^="cap_"]').forEach(function(el){el.style.borderColor='var(--border)';});var el=document.getElementById('cap_'+i);if(el){el.style.borderColor='var(--a)';document.getElementById('chCaption').value=el.dataset.cap;}}
 window.selectCaption=selectCaption;
 
 async function dispatchPost(platform){
-  var s=_chActiveCard;
-  if(!s)return;
+  var s=_chActiveCard;if(!s)return;
   var caption=document.getElementById('chCaption').value.trim();
   if(!caption){alert('Please enter or select a caption first.');return;}
   var res=document.getElementById('chPostResult');
   res.innerHTML='<div style="text-align:center;padding:.75rem"><span class="spin"></span> Posting to '+platform+'...</div>';
   try{
-    var r=await fetch('/api/admin/content-submissions/'+s.id+'/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({caption:caption,platforms:[platform]})});
+    await fetch('/api/admin/content-submissions/'+s.id+'/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({caption:caption,platforms:[platform]})});
     var r2=await fetch('/api/admin/content-submissions/'+s.id+'/post',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({platform:platform,caption:caption})});
     var d=await r2.json();
-    if(d.ok){
-      var plink=d.post_url?'<br><a href="'+d.post_url+'" target="_blank" style="color:var(--a)">View Post &#8599;</a>':'';
-      res.innerHTML='<div style="background:rgba(34,197,94,.1);border:1px solid #22c55e;border-radius:var(--r);padding:.75rem;font-size:.85rem;color:#4ade80">&#10003; Posted to '+platform+'!'+plink+'</div>';
-      setTimeout(function(){loadContentHub();},2000);
-    } else {
-      res.innerHTML='<div style="background:rgba(239,68,68,.1);border:1px solid #ef4444;border-radius:var(--r);padding:.75rem;font-size:.82rem;color:#f87171">&#10007; '+platform+' error: '+(d.error||'Unknown error')+'</div>';
-    }
+    if(d.ok){var plink=d.post_url?'<br><a href="'+d.post_url+'" target="_blank" style="color:var(--a)">View Post &#8599;</a>':'';res.innerHTML='<div style="background:rgba(34,197,94,.1);border:1px solid #22c55e;border-radius:var(--r);padding:.75rem;font-size:.85rem;color:#4ade80">&#10003; Posted to '+platform+'!'+plink+'</div>';setTimeout(function(){loadContentHub();},2000);}
+    else{res.innerHTML='<div style="background:rgba(239,68,68,.1);border:1px solid #ef4444;border-radius:var(--r);padding:.75rem;font-size:.82rem;color:#f87171">&#10007; '+platform+' error: '+(d.error||'Unknown error')+'</div>';}
   }catch(e){res.innerHTML='<div style="background:rgba(239,68,68,.1);border:1px solid #ef4444;border-radius:var(--r);padding:.75rem;font-size:.82rem;color:#f87171">Error: '+e.message+'</div>';}
 }
 window.dispatchPost=dispatchPost;
 
 async function guidedPost(platform){
-  var s=_chActiveCard;
-  if(!s)return;
+  var s=_chActiveCard;if(!s)return;
   var caption=document.getElementById('chCaption').value.trim();
   var res=document.getElementById('chPostResult');
-
-  // Log the guided dispatch
   try{
     await fetch('/api/admin/content-submissions/'+s.id+'/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({caption:caption,platforms:[platform]})});
     await fetch('/api/admin/content-submissions/'+s.id+'/post',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({platform:platform,caption:caption})});
   }catch(e){}
-
   var mediaUrl=s.r2_key?location.origin+'/media/serve/'+encodeURIComponent(s.r2_key):null;
   var deepLink=platform==='instagram_guided'?'instagram://camera':'snssdk1128://';
   var platformName=platform==='instagram_guided'?'Instagram':'TikTok';
-
-  res.innerHTML='<div style="background:rgba(200,168,75,.1);border:1px solid var(--a);border-radius:var(--r);padding:1rem;margin-bottom:.75rem">'
-    +'<div style="font-size:.82rem;font-weight:600;color:var(--a);margin-bottom:.75rem">&#9992;&#65039; '+platformName+' Pre-Flight Station</div>'
-    +(caption?'<div style="margin-bottom:.75rem"><div style="font-size:.72rem;color:var(--muted);margin-bottom:.35rem">Caption (tap to copy)</div><div style="background:rgba(255,255,255,.06);border-radius:var(--r);padding:.65rem;font-size:.82rem;color:#fff;cursor:pointer" onclick="copyAndAlert(\''+caption.replace(/'/g,"\\'")+'\')">'+(caption.slice(0,200))+'<br><span style="color:var(--a);font-size:.72rem">Tap to copy &#128203;</span></div></div>':'')
-    +(mediaUrl?'<div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem"><a href="'+mediaUrl+'" download="content.jpg" class="btn btn-sm" style="background:var(--a);color:#fff;text-decoration:none">&#11015;&#65039; Download Media</a><a href="'+deepLink+'" class="btn btn-sm" style="background:rgba(255,255,255,.1);color:#fff;text-decoration:none">Open '+platformName+' App &#8599;</a></div>':'')
-    +'<div style="font-size:.72rem;color:var(--muted)">After downloading: open '+platformName+', create a post, upload the saved media, paste the caption from your clipboard, and publish.</div>'
-    +'</div>';
-
+  res.innerHTML='<div style="background:rgba(200,168,75,.1);border:1px solid var(--a);border-radius:var(--r);padding:1rem;margin-bottom:.75rem"><div style="font-size:.82rem;font-weight:600;color:var(--a);margin-bottom:.75rem">&#9992;&#65039; '+platformName+' Pre-Flight Station</div>'+(caption?'<div style="margin-bottom:.75rem"><div style="font-size:.72rem;color:var(--muted);margin-bottom:.35rem">Caption (tap to copy)</div><div style="background:rgba(255,255,255,.06);border-radius:var(--r);padding:.65rem;font-size:.82rem;color:#fff;cursor:pointer" onclick="copyAndAlert(this.dataset.cap)" data-cap="'+caption.replace(/"/g,'&quot;')+'">'+caption.slice(0,200)+'<br><span style="color:var(--a);font-size:.72rem">Tap to copy &#128203;</span></div></div>':'')+(mediaUrl?'<div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem"><a href="'+mediaUrl+'" download="content.jpg" class="btn btn-sm" style="background:var(--a);color:#fff;text-decoration:none">&#11015;&#65039; Download Media</a><a href="'+deepLink+'" class="btn btn-sm" style="background:rgba(255,255,255,.1);color:#fff;text-decoration:none">Open '+platformName+' App &#8599;</a></div>':'')+'<div style="font-size:.72rem;color:var(--muted)">After downloading: open '+platformName+', create a post, upload the saved media, paste the caption from your clipboard, and publish.</div></div>';
   setTimeout(function(){loadContentHub();},1500);
 }
 window.guidedPost=guidedPost;
@@ -379,21 +308,16 @@ window.guidedPost=guidedPost;
 function copyAndAlert(text){try{navigator.clipboard.writeText(text).then(function(){alert('Caption copied to clipboard!');});}catch(e){prompt('Copy caption:',text);}}
 window.copyAndAlert=copyAndAlert;
 
-function closeChOverlay(){
-  var ov=document.getElementById('chOverlay');
-  if(ov){ov.style.display='none';}
-  _chActiveCard=null;
-}
+function closeChOverlay(){var ov=document.getElementById('chOverlay');if(ov){ov.style.display='none';}_chActiveCard=null;}
 window.closeChOverlay=closeChOverlay;
 
-// ── Boot ─────────────────────────────────────────────────────────────────────
+// ── Boot ──────────────────────────────────────────────────────────────────────
 function boot(){
   try{sessionStorage.setItem('ccs_admin_v2','1');}catch(e){}
   var lock=document.getElementById('lock');
   var appEl=document.getElementById('app');
   if(lock)lock.style.display='none';
   if(appEl)appEl.style.display='block';
-  // Inject Content Hub tab button into nav if not already there
   var tabsEl=document.querySelector('.atabs');
   if(tabsEl&&!document.querySelector('[data-tab="contenthub"]')){
     var btn=document.createElement('button');
@@ -402,7 +326,6 @@ function boot(){
     btn.setAttribute('onclick',"showTab('contenthub')");
     btn.textContent='&#128247; Content Hub';
     tabsEl.appendChild(btn);
-    // Inject panel
     var body=document.querySelector('.abody');
     if(body){
       var panel=document.createElement('div');
@@ -411,7 +334,6 @@ function boot(){
       panel.style.display='none';
       panel.innerHTML='<div class="acard"><div class="acard-head"><h2>&#127917; Content Gathering Hub</h2><button class="btn btn-outline btn-sm" onclick="loadContentHub()">Refresh</button></div><div class="acard-body"><div id="panelContentHub"><div style="color:var(--muted);font-size:.85rem">Click a tab to load.</div></div></div></div>';
       body.appendChild(panel);
-      // Inject overlay modal
       var ov=document.createElement('div');
       ov.id='chOverlay';
       ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:400;display:none;align-items:flex-start;justify-content:center;padding:1rem;overflow-y:auto';
@@ -454,23 +376,20 @@ export default {
       });
     }
 
-    // Fast status intercept
     if (request.method === "GET" && (path === "/status" || path === "/admin/status" || path === "/api/status")) {
       return fastStatus(env);
     }
 
-    // Content Hub routes (crew upload + admin API)
     const chRes = await routeContentHub(request, env, ctx, path);
     if (chRes) return chRes;
 
-    // Admin page — inject fix + content hub JS
     if (request.method === "GET" && path === "/admin") {
       const response = await app.fetch(request, env, ctx);
       const html = await response.text();
       const headers = new Headers(response.headers);
       headers.set("Content-Type", "text/html;charset=UTF-8");
       headers.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
-      headers.set("X-Admin-Fix", "v4-contenthub");
+      headers.set("X-Admin-Fix", "v5-regex-fix");
       return new Response(bypassAdminPassword(html), { status: response.status, headers });
     }
 
