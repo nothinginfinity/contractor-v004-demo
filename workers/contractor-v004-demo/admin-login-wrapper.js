@@ -1,5 +1,6 @@
 import app from "./contractor-v004-demo.js";
 import { handleContentHub } from "./content-hub.js";
+import ADMIN_FIX_JS from "./admin-fix.txt";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function json(data, status = 200) {
@@ -58,18 +59,13 @@ export default {
       }});
     }
 
-    // Serve the admin fix script as a static file — pure JS, no inline escaping
+    // Serve admin-fix.js — imported as raw text via wrangler [[rules]], no escaping
     if (path === "/admin-fix.js") {
-      const fixJs = await import("./admin-fix.js");
-      // Since we can't dynamically import text, read it as a fetch to self
-      // Instead: inline the file content via a module-level import
-      // Simpler: just re-export from the file using a text response trick
-      // ACTUAL approach: the file is bundled by wrangler, serve it via R2 or hard-code
-      // SIMPLEST that works: fetch the raw file from GitHub at startup — no, too slow
-      // CORRECT approach for Cloudflare Workers: use a separate fetch from the repo
-      // The cleanest solution: make admin-fix.js export its content as a string
-      return new Response("/* loaded via wrangler bundle */", {
-        headers: { "Content-Type": "application/javascript", "Cache-Control": "no-store" }
+      return new Response(ADMIN_FIX_JS, {
+        headers: {
+          "Content-Type": "application/javascript;charset=UTF-8",
+          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"
+        }
       });
     }
 

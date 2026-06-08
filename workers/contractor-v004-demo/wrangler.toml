@@ -17,3 +17,8 @@ bucket_name = "afo-site-content"
 
 [ai]
 binding = "AI"
+
+[[rules]]
+type = "Text"
+globs = ["**/*.txt"]
+fallthrough = true
