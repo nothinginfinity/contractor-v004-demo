@@ -53,3 +53,35 @@ CREATE TABLE IF NOT EXISTS knowledge_seeds (
   embedded INTEGER DEFAULT 0,
   created_at TEXT, updated_at TEXT
 );
+
+-- ============================================================
+-- Content Gathering Hub — added 2026-06-07
+-- ============================================================
+
+-- Crew member media submissions (raw uploads awaiting admin curation)
+CREATE TABLE IF NOT EXISTS content_submissions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  submitted_by TEXT,              -- crew member name or user ID
+  raw_note TEXT,                  -- crew's quick caption note
+  r2_key TEXT,                    -- R2 object key for uploaded media
+  content_type TEXT,              -- image/* or video/*
+  status TEXT DEFAULT 'pending',  -- pending | approved | rejected | posted
+  ai_captions TEXT,               -- JSON array of 3 AI-suggested captions
+  selected_caption TEXT,          -- caption chosen by admin at approval
+  target_platforms TEXT,          -- JSON array: ["bluesky","instagram","tiktok","mastodon"]
+  created_at TEXT,
+  reviewed_at TEXT
+);
+
+-- Social post dispatch log (direct posts + guided preflight records)
+CREATE TABLE IF NOT EXISTS social_posts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  submission_id INTEGER,          -- FK → content_submissions.id
+  platform TEXT,                  -- bluesky | mastodon | instagram_guided | tiktok_guided
+  status TEXT,                    -- posted | guided_dispatched | failed
+  post_url TEXT,                  -- returned permalink (Bluesky/Mastodon direct posts)
+  caption_used TEXT,
+  error_message TEXT,             -- populated on failure
+  posted_at TEXT,
+  FOREIGN KEY (submission_id) REFERENCES content_submissions(id)
+);
